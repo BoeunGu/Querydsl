@@ -273,11 +273,14 @@ public class QuerydslBasicTest {
     public void join_on_no_relation() throws Exception {
         em.persist(new Member("teamA"));
         em.persist(new Member("teamB"));
+
         List<Tuple> result = queryFactory
                 .select(member, team)
                 .from(member)
-                .leftJoin(team).on(member.username.eq(team.name))
+                .leftJoin(team).on(member.username.eq(team.name)) //id(FK)로 매칭되지 않고 on절의 조건으로 걸러짐
                 .fetch();
+
+
         for (Tuple tuple : result) {
             System.out.println("t=" + tuple);
         }

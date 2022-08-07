@@ -1,5 +1,6 @@
 package study.querydsl;
 
+import com.querydsl.core.QueryResults;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import study.querydsl.entity.Team;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static study.querydsl.entity.QMember.member;
@@ -81,6 +83,22 @@ public class QuerydslBasicTest {
                 .fetchOne();
 
         assertThat(findMember.getUsername()).isEqualTo("member1");
+
+    }
+
+    @Test
+    public void resultFetch() {
+        List<Member> fetch = queryFactory.selectFrom(member).fetch(); //리스트 조회
+
+        Member fetchOne = queryFactory.selectFrom(QMember.member).fetchOne(); //단건조회
+
+        Member member = queryFactory.selectFrom(QMember.member).fetchFirst();//limit(1).fetch()와 동일
+
+        QueryResults<Member> results = queryFactory.selectFrom(QMember.member).fetchResults();
+        List<Member> results1 = results.getResults();
+        results.getTotal();//페이징 정보포함, count쿼리 추가 실행
+
+        long count = queryFactory.selectFrom(QMember.member).fetchCount(); //카운트 쿼리만 날라감
 
     }
 }

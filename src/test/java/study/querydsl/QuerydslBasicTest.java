@@ -2,6 +2,9 @@ package study.querydsl;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.dsl.CaseBuilder;
+import com.querydsl.core.types.dsl.Expressions;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +16,7 @@ import study.querydsl.entity.QTeam;
 import study.querydsl.entity.Team;
 
 import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
 import javax.persistence.PersistenceContext;
 import java.util.List;
 
@@ -214,27 +218,8 @@ public class QuerydslBasicTest {
                 .containsExactly("member1", "member2");
     }
 
-    /**
-     * 세타 조인(연관관계가 없는 필드로 조인)
-     * 회원의 이름이 팀 이름과 같은 회원 조회 (억지성으로 예시)
-     */
-    @Test
-    public void theta_join() throws Exception {
-        em.persist(new Member("teamA"));
-        em.persist(new Member("teamB"));
-
-
-        List<Member> result = queryFactory
-                .select(member)
-                .from(member, team) //member테이블과 team테이블을 모두 조인하고 검색 -> DB에서 최적하는 하면서 진행한다
-                .where(member.username.eq(team.name))
-                .fetch();
-
-
-        assertThat(result)
-                .extracting("username")
-                .containsExactly("teamA", "teamB");
-    }
+    @PersistenceContext
+    EntityManagerFactory emf;
 
     /**
      * 예) 회원과 팀을 조인하면서, 팀 이름이 teamA인 팀만 조인, 회원은 모두 조회
@@ -285,4 +270,159 @@ public class QuerydslBasicTest {
             System.out.println("t=" + tuple);
         }
     }
+
+    /**
+     * 세타 조인(연관관계가 없는 필드로 조인) -> 연관관계가 없어도 조인이 가능하다.
+     * 회원의 이름이 팀 이름과 같은 회원 조회 (억지성으로 예시)
+     */
+    @Test
+    public void theta_join() throws Exception {
+        em.persist(new Member("teamA"));
+        em.persist(new Member("teamB"));
+
+
+        List<Member> result = queryFactory
+                .select(member)
+                .from(member, team) //member테이블과 team테이블을 모두 조인하고 검색 -> DB에서 최적하는 하면서 진행한다
+                .where(member.username.eq(team.name))
+                .fetch();
+
+
+        assertThat(result)
+                .extracting("username")
+                .containsExactly("teamA", "teamB");
+    }
+
+    @Test
+    public void fetchJoinNo() throws Exception {
+        em.flush();
+        em.clear();
+
+        Member findMember = queryFactory
+                .selectFrom(member)
+                .where(member.username.eq("member1")) //Lazy로 걸려있어서 Member객체의 team필드는 데이터를 가져오지 않음
+                .fetchOne();
+
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(findMember.getTeam());
+
+        assertThat(loaded).as("페치조인 미적용").isFalse();
+
+    }
+
+    /**
+     * 페치 조인 적용
+     *
+     * @throws Exception
+     */
+    @Test
+    public void fetchJoinUse() throws Exception {
+
+        em.flush();
+        em.clear();
+
+        Member member1 = queryFactory.selectFrom(member)
+                .join(member.team, team).fetchJoin() //페치조인을 적용하는 곳 -> join(), leftjoin() 기능 뒤에 fetchJoin()이라고 추가하면 된다.
+                .where(member.username.eq("member1"))
+                .fetchOne();
+
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(member1.getTeam());
+        assertThat(loaded).as("페치조인 적용").isTrue();
+    }
+
+    /**
+     * 나이가 가장 많은 회원 조회
+     */
+    @Test
+    public void subQuery() throws Exception {
+        QMember memberSub = new QMember("memberSub"); //alias가 겹치면 안되서 따로 지정
+
+        List<Member> result = queryFactory.selectFrom(member)
+                .where(member.age.eq(
+                        JPAExpressions.select(memberSub.age.max())
+                                .from(memberSub)
+                )).fetch();
+
+        assertThat(result).extracting("age").containsExactly(40);
+
+
+    }
+
+    /**
+     * 나이가 평균나이 이상인 회원 조회
+     */
+    @Test
+    public void subQueryGoe() throws Exception {
+        QMember memberSub = new QMember("memberSub"); //alias가 겹치면 안되서 따로 지정
+
+        List<Member> result = queryFactory.selectFrom(member)
+                .where(member.age.goe(
+                        JPAExpressions.select(memberSub.age.avg())
+                                .from(memberSub)
+                )).fetch();
+
+        assertThat(result).extracting("age").containsExactly(30, 40);
+
+
+    }
+
+
+    /**
+     * 나이가 평균나이 이상인 회원 조회
+     */
+    @Test
+    public void subQueryIn() throws Exception {
+        QMember memberSub = new QMember("memberSub"); //alias가 겹치면 안되서 따로 지정
+
+        List<Member> result = queryFactory.selectFrom(member)
+                .where(member.age.in(
+                        JPAExpressions.select(memberSub.age)
+                                .from(memberSub)
+                                .where(memberSub.age.gt(10))
+                )).fetch();
+
+        assertThat(result).extracting("age").containsExactly(20, 30, 40);
+
+    }
+
+    @Test
+    public void caseQuery() throws Exception {
+
+        List<String> result = queryFactory.select(member.age
+                        .when(10).then("열살")
+                        .when(20).then("스무살")
+                        .otherwise("기타"))
+                .from(member)
+                .fetch();
+    }
+
+    @Test
+    public void caseComplexQuery() throws Exception {
+
+        queryFactory.select(new CaseBuilder()
+                        .when(member.age.between(0, 20)).then("0~20살")
+                        .when(member.age.between(21, 30)).then("21~30살")
+                        .otherwise("기타"))
+                .from(member)
+                .fetch();
+
+    }
+
+    @Test
+    public void enumPrint() {
+
+        queryFactory.select(member.username, Expressions.constant("A")) //상수 A를 함께 출력
+                .from(member).fetchFirst();
+    }
+
+    @Test
+    public void concatWord() {
+
+        queryFactory.select(member.username.concat("_")
+                        .concat(member.age.stringValue()))
+                .from(member)
+                .where(member.username.eq("member1"))
+                .fetchOne();
+    }
+
+
 }

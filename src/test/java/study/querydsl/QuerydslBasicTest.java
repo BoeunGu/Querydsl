@@ -1,7 +1,10 @@
 package study.querydsl;
 
+import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Projections;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
@@ -10,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
+import study.querydsl.dto.MemberDto;
+import study.querydsl.dto.QMemberDto;
 import study.querydsl.entity.Member;
 import study.querydsl.entity.QMember;
 import study.querydsl.entity.QTeam;
@@ -422,6 +427,147 @@ public class QuerydslBasicTest {
                 .from(member)
                 .where(member.username.eq("member1"))
                 .fetchOne();
+    }
+
+    @Test
+    public void tupleProjection() {
+        List<Tuple> result = queryFactory
+                .select(member.username, member.age)  //하나 이상의 타입을 조회할 때 주로 튜플, DTO를 사용한다. Repository 레벨까지만 사용하도록! -> 튜플을 querydsl 종속적이다.
+                .from(member)
+                .fetch();
+
+        for (Tuple tuple : result) {
+            String username = tuple.get(member.username); //Tuple에서 값 조회하는 법
+            Integer integer = tuple.get(member.age);
+
+        }
+    }
+
+
+    @Test
+    public void findDtoBySetter() {
+        List<MemberDto> result = queryFactory
+                .select(Projections.bean(MemberDto.class //querydsl의 Projections  이용하여 타입이 다른 데이터 조회가능!
+                        , member.username
+                        , member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+
+    }
+
+    @Test
+    public void findDtoByField() {  //Projections의 field사용
+        List<MemberDto> result = queryFactory
+                .select(Projections.fields(MemberDto.class //querydsl의 Projections  이용하여 타입이 다른 데이터 조회가능!
+                        , member.username
+                        , member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+
+    }
+
+
+    @Test
+    public void findDtoByConstructor() {  //Projections의 field사용
+        List<MemberDto> result = queryFactory
+                .select(Projections.constructor(MemberDto.class //querydsl의 Projections  이용하여 타입이 다른 데이터 조회가능!
+                        , member.username
+                        , member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+
+    }
+
+    @Test
+    public void findDtoByQueryProjection() { //DTO에서 @QueryProjection을 사요하면 가능
+
+        List<MemberDto> result = queryFactory
+                .select(new QMemberDto(member.username, member.age))
+                .from(member)
+                .fetch();
+    }
+
+    @Test
+    public void dynamicQuery_BooleanBuilder() {
+        //검색조건
+        String usernameParam = "member1";
+        Integer ageParam = 10;
+
+        List<Member> result = searchMember1(usernameParam, ageParam);
+        assertThat(result.size()).isEqualTo(1);
+    }
+
+    private List<Member> searchMember1(String usernameParam, Integer ageParam) {
+
+        BooleanBuilder builder = new BooleanBuilder();  //검색 조건이 동적일 때 BooleanBuilder를 사용한다.
+
+        if (usernameParam != null) {
+            builder.and(member.username.eq(usernameParam));
+        }
+
+        if (ageParam != null) {
+            builder.and(member.age.eq(ageParam));
+        }
+
+        return queryFactory
+                .selectFrom(member)
+                .where(builder)
+                .fetch();
+
+    }
+
+    @Test
+    public void dynamicQuery_WhereBuilder() {
+        //검색조건
+        String usernameParam = "member1";
+        Integer ageParam = 10;
+
+        List<Member> result = searchMember2(usernameParam, ageParam);
+        assertThat(result.size()).isEqualTo(1);
+    }
+
+    private List<Member> searchMember2(String usernameParam, Integer ageParam) {
+
+        return queryFactory
+                .selectFrom(member)
+                .where(usernameEq(usernameParam), ageEq(ageParam))
+                .fetch();
+
+    }
+
+    private BooleanExpression usernameEq(String usernameParam) {
+        return usernameParam != null ? member.username.eq(usernameParam) : null;
+    }
+
+    private BooleanExpression ageEq(Integer ageParam) {
+        return ageParam != null ? member.age.eq(ageParam) : null;
+    }
+
+
+    @Test
+    public void bulkUpdate() {
+
+        //벌크연산은 영속성 컨텍스트를 무시하고 바로 DB로 값을 바꿔버림 -> 영속성컨텍스트와 DB의 값이 다름
+        //DB에서 다시 값을 들고와도 영속성컨텍스트에 이미 값이 있으면 영속성 컨텍스트가 우선권을 가지기 때문에 값을 바꾸지 않음 -> 영속성 컨텍스트를 날려버려야한다. em.flush(), em.clear()
+        //나이가 28이하인 멤버들 이름을 "비회원"으로 바꾸기
+        //리턴 값은 영향을 받은 member의 수
+        long count = queryFactory
+                .update(member)
+                .set(member.username, "비회원")
+                .where(member.age.lt(28))
+                .execute();
     }
 
 
